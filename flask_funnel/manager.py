@@ -58,20 +58,18 @@ def bundle_assets():
                 return match.group(1) # captured quoted-string
         return regex.sub(_replacer, string)
 
-    def fix_urls_regex(url, relpath):
+    def fix_urls_regex(url, filename, compressed_file):
         """Callback to fix relative path"""
         url = url.group(1).strip('"\'')
-        if url.startswith(('//', 'data:', 'http:', 'https:', 'attr(')):
-            pass
-        else:
-            url = os.path.relpath(url, relpath)
-        return 'url(%s)' % url
+        if not url.startswith(('//', 'data:', 'http:', 'https:', 'attr(')):
+            url = os.path.join(os.path.dirname(filename), url)
+            url = os.path.relpath(get_path(url), get_path(os.path.dirname(compressed_file)))
+        return "url(\'%s\')" % url
 
     def prepare_css(filename, compressed_file):
         """Fix relative paths in URLs for bundles and remove comments"""
         print("Fixing URL's in %s" % filename)
-        relpath = os.path.relpath(filename, get_path(os.path.dirname(filename)))
-        parse   = lambda url: fix_urls_regex(url, relpath)
+        parse   = lambda url: fix_urls_regex(url, filename, compressed_file)
         content = read_file(filename)
         content = re.sub('url\(([^)]*?)\)', parse, content)
         content = remove_comments(content)
@@ -124,10 +122,14 @@ def bundle_assets():
                 return None
         else:
             try:
-                function = prepare_css if filename.endswith('.css') else prepare_js(filename, compressed_file)
-                prepared = function(filename, compressed_file)
-                filename = prepared
-                tmp_files.append(filename)
+                function = None
+                if filename.endswith('.css'):
+                    function = prepare_css
+                # if filename.endswith('.js'):
+                #     function = prepare_js
+                if function:
+                    filename = function(filename, compressed_file)
+                    tmp_files.append(filename)
             except Exception as e:
                 pass
         # Return path of file
@@ -179,22 +181,19 @@ def bundle_assets():
                 print('Processed: %s' % processed)
                 if processed is not None:
                     all_files.append(processed)
-
             # Concatenate
             if len(all_files) == 0:
                 print("Warning: '%s' is an empty bundle." % bundle)
-
-            all_files = ' '.join(all_files)
-            subprocess.call("cat %s > %s" % (all_files, concatenated_file),
-                            shell=True)
-
+            for file in all_files:
+                subprocess.call("cat %s >> %s" % (file, concatenated_file), shell=True)
+                subprocess.call("echo -n '\n' >> %s" % concatenated_file, shell=True)
             # Minify
             minify(ftype, concatenated_file, compressed_file)
             # Post process
             postprocess(compressed_file, fix_path=False)
-            # # Remove concatenated file
-            # print('Remove concatenated file')
-            # os.remove(concatenated_file)
+            # Remove concatenated file
+            print('Remove concatenated file')
+            os.remove(concatenated_file)
 
     # Cleanup
     print('Clean up temporary files')
