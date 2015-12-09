@@ -73,13 +73,6 @@ def bundle_assets():
         content = read_file(filename)
         content = re.sub('url\(([^)]*?)\)', parse, content)
         content = remove_comments(content)
-        content = (content + '\n')
-        return write_file(filename, content, compressed_file)
-
-    def prepare_js(filename, compressed_file):
-        content = read_file(filename)
-        content = remove_comments(content)
-        content = (content + '\n')
         return write_file(filename, content, compressed_file)
 
     def preprocess_file(filename, compressed_file):
@@ -122,13 +115,8 @@ def bundle_assets():
                 return None
         else:
             try:
-                function = None
                 if filename.endswith('.css'):
-                    function = prepare_css
-                # if filename.endswith('.js'):
-                #     function = prepare_js
-                if function:
-                    filename = function(filename, compressed_file)
+                    filename = prepare_css(filename, compressed_file)
                     tmp_files.append(filename)
             except Exception as e:
                 pass
