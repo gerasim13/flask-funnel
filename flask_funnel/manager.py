@@ -1,16 +1,19 @@
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from __future__ import with_statement, absolute_import, print_function
 
 import os
 import re
 import shutil
 import subprocess
+import chardet
 
-from flask import current_app
+from flask            import current_app
 from flask.ext.script import Manager
 
 from .extensions import postprocess, preprocess
-from ._compat import urlopen, URLError, HTTPError
-
+from ._compat    import urlopen, URLError, HTTPError
 
 manager = Manager(usage="Asset bundling")
 
@@ -19,49 +22,67 @@ manager = Manager(usage="Asset bundling")
 def bundle_assets():
     """Compress and minify assets"""
     YUI_COMPRESSOR_BIN = current_app.config.get('YUI_COMPRESSOR_BIN')
-
     path_to_jar = YUI_COMPRESSOR_BIN
-
     tmp_files = []
 
     def get_path(item):
         """Get the static path of an item"""
         return os.path.join(current_app.static_folder, item)
 
-    def fix_urls(filename, compressed_file):
-        """Fix relative paths in URLs for bundles"""
-        print("Fixing URL's in %s" % filename)
+    def read_file(filename):
+        content = ''
+        path    = get_path(filename)
+        with open(path, 'r', encoding='utf-8', errors='surrogateescape') as file:
+            content = file.read().encode('utf-8', errors='surrogateescape')
+        return content.decode('unicode_escape', errors='surrogateescape')
 
-        def fix_urls_regex(url, relpath):
-            """Callback to fix relative path"""
-            url = url.group(1).strip('"\'')
-            if url.startswith(('data:', 'http:', 'https:', 'attr(')):
-                return url
-            else:
-                url = os.path.relpath(url, relpath)
-                return 'url(%s)' % url
-
-        css_content = ''
-        with open(get_path(filename), 'r') as css_in:
-            css_content = css_in.read()
-
-        relpath = os.path.relpath(os.path.dirname(compressed_file),
-                                  get_path(os.path.dirname(filename)))
-
-        parse = lambda url: fix_urls_regex(url, relpath)
-
-        css_parsed = re.sub('url\(([^)]*?)\)', parse, css_content)
-
-        out_file = get_path(os.path.join(current_app.config.get('BUNDLES_DIR'),
-                                         'tmp', '%s.tmp' % filename))
-
+    def write_file(filename, content, compressed_file):
+        out_file = get_path(os.path.join(current_app.config.get('BUNDLES_DIR'), 'tmp', '%s.tmp' % filename))
         if not os.path.exists(os.path.dirname(out_file)):
             os.makedirs(os.path.dirname(out_file))
-
-        with open(out_file, 'w') as css_out:
-            css_out.write(css_parsed)
-
+        with open(out_file, 'w', encoding='utf-8', errors='surrogateescape') as file:
+            file.write(content)
         return os.path.relpath(out_file, get_path('.'))
+
+    def remove_comments(string):
+        pattern = r"(\".*?\"|\'.*?\')|(/\*.*?\*/|//[^\r\n]*$)"
+        # first group captures quoted strings (double or single)
+        # second group captures comments (//single-line or /* multi-line */)
+        regex = re.compile(pattern, re.MULTILINE|re.DOTALL)
+        def _replacer(match):
+            # if the 2nd group (capturing comments) is not None,
+            # it means we have captured a non-quoted (real) comment string.
+            if match.group(2) is not None:
+                return "" # so we will return empty to remove the comment
+            else: # otherwise, we will return the 1st group
+                return match.group(1) # captured quoted-string
+        return regex.sub(_replacer, string)
+
+    def fix_urls_regex(url, relpath):
+        """Callback to fix relative path"""
+        url = url.group(1).strip('"\'')
+        if url.startswith(('//', 'data:', 'http:', 'https:', 'attr(')):
+            pass
+        else:
+            url = os.path.relpath(url, relpath)
+        return 'url(%s)' % url
+
+    def prepare_css(filename, compressed_file):
+        """Fix relative paths in URLs for bundles and remove comments"""
+        print("Fixing URL's in %s" % filename)
+        relpath = os.path.relpath(filename, get_path(os.path.dirname(filename)))
+        parse   = lambda url: fix_urls_regex(url, relpath)
+        content = read_file(filename)
+        content = re.sub('url\(([^)]*?)\)', parse, content)
+        content = remove_comments(content)
+        content = (content + '\n')
+        return write_file(filename, content, compressed_file)
+
+    def prepare_js(filename, compressed_file):
+        content = read_file(filename)
+        content = remove_comments(content)
+        content = (content + '\n')
+        return write_file(filename, content, compressed_file)
 
     def preprocess_file(filename, compressed_file):
         """Preprocess the file"""
@@ -74,43 +95,43 @@ def bundle_assets():
 
         if url:
             ext_media_path = get_path('external')
-
+            filename       = os.path.basename(url)
             if not os.path.exists(ext_media_path):
                 os.makedirs(ext_media_path)
-
-            filename = os.path.basename(url)
             if filename.endswith(('.js', '.css', '.less')):
-                fp = get_path(filename.lstrip('/'))
-                file_path = os.path.join(ext_media_path, fp)
+                file_path = os.path.join(ext_media_path, filename)
+                filename  = os.path.join('external', filename)
+                assert('external' in ext_media_path)
+                assert('external' in file_path)
 
                 try:
                     req = urlopen(url)
                     print(' - Fetching %s ...' % url)
                 except HTTPError as e:
-                    print(' - HTTP Error %s for %s, %s' % (url, filename,
-                                                           str(e.code)))
+                    print(' - HTTP Error %s for %s, %s' % (url, filename, str(e.code)))
                     return None
                 except URLError as e:
-                    print(' - Invalid URL %s for %s, %s' % (url, filename,
-                                                            str(e.reason)))
+                    print(' - Invalid URL %s for %s, %s' % (url, filename, str(e.reason)))
                     return None
-
-                with open(file_path, 'w+') as fp:
-                    try:
+                try:
+                    print(' - Copying %s to %s ...' % (url, file_path))
+                    with open(file_path, 'wb') as fp:
                         shutil.copyfileobj(req, fp)
-                    except shutil.Error:
-                        print(' - Could not copy file %s' % filename)
-                filename = os.path.join('external', filename)
+                except shutil.Error:
+                    print(' - Could not copy file %s' % filename)
             else:
                 print(' - Not a valid remote file %s' % filename)
                 return None
-
+        else:
+            try:
+                function = prepare_css if filename.endswith('.css') else prepare_js(filename, compressed_file)
+                prepared = function(filename, compressed_file)
+                filename = prepared
+                tmp_files.append(filename)
+            except Exception as e:
+                pass
+        # Return path of file
         filename = preprocess(filename.lstrip('/'))
-
-        if url is None and filename.endswith('.css'):
-            filename = fix_urls(filename, compressed_file)
-            tmp_files.append(filename)
-
         return get_path(filename.lstrip('/'))
 
     def minify(ftype, file_in, file_out):
@@ -164,19 +185,16 @@ def bundle_assets():
                 print("Warning: '%s' is an empty bundle." % bundle)
 
             all_files = ' '.join(all_files)
-
             subprocess.call("cat %s > %s" % (all_files, concatenated_file),
                             shell=True)
 
             # Minify
             minify(ftype, concatenated_file, compressed_file)
-
             # Post process
             postprocess(compressed_file, fix_path=False)
-
-            # Remove concatenated file
-            print('Remove concatenated file')
-            os.remove(concatenated_file)
+            # # Remove concatenated file
+            # print('Remove concatenated file')
+            # os.remove(concatenated_file)
 
     # Cleanup
     print('Clean up temporary files')
