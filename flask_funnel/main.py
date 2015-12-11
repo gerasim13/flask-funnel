@@ -39,6 +39,9 @@ class Funnel(object):
         app.config.setdefault('AUTOPREFIXER_ENABLED', False)
         app.config.setdefault('AUTOPREFIXER_BROWSERS', 'last 2 versions')
 
+        app.config.setdefault('PROCESS_CSS_ASSETS', True)
+        app.config.setdefault('PROCESS_JS_ASSETS', True)
+
         app.config.setdefault('CSS_BUNDLES', {})
         app.config.setdefault('JS_BUNDLES', {})
 
@@ -88,8 +91,8 @@ class Funnel(object):
 
                 return items
 
-            def js(bundle, defer=False, async=False, debug=app.debug):
-                if debug:
+            def js(bundle, defer=False, async=False, process=app.config.get('PROCESS_JS_ASSETS')):
+                if not process:
                     items = _build('JS_BUNDLES', bundle)
                 else:
                     bundle_file = os.path.join(app.config.get('BUNDLES_DIR'),
@@ -108,11 +111,11 @@ class Funnel(object):
                 string = '<script %s></script>' % ' '.join(attrs)
                 return build_html(items, string)
 
-            def css(bundle, media=None, debug=app.debug):
+            def css(bundle, media=None, process=app.config.get('PROCESS_CSS_ASSETS')):
                 if media is None:
                     media = app.config.get('CSS_MEDIA_DEFAULT')
 
-                if debug:
+                if not process:
                     items = _build('CSS_BUNDLES', bundle)
                 else:
                     bundle_file = os.path.join(app.config.get('BUNDLES_DIR'),

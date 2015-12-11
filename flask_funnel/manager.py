@@ -64,15 +64,15 @@ def bundle_assets():
         if not url.startswith(('//', 'data:', 'http:', 'https:', 'attr(')):
             url = os.path.join(os.path.dirname(filename), url)
             url = os.path.relpath(get_path(url), get_path(os.path.dirname(compressed_file)))
-        return "url(\'%s\')" % url
+        return 'url(\"%s\")' % url
 
     def prepare_css(filename, compressed_file):
         """Fix relative paths in URLs for bundles and remove comments"""
         print("Fixing URL's in %s" % filename)
         parse   = lambda url: fix_urls_regex(url, filename, compressed_file)
         content = read_file(filename)
-        content = re.sub('url\(([^)]*?)\)', parse, content)
         content = remove_comments(content)
+        content = re.sub('url\(([^)]*?)\)', parse, content)
         return write_file(filename, content, compressed_file)
 
     def preprocess_file(filename, compressed_file):
@@ -127,22 +127,15 @@ def bundle_assets():
     def minify(ftype, file_in, file_out):
         """Minify the file"""
         if ftype == 'js' and 'UGLIFY_BIN' in current_app.config:
-            o = {'method': 'UglifyJS',
-                 'bin': current_app.config.get('UGLIFY_BIN')}
-            subprocess.call("%s -o %s %s" % (o['bin'], file_out, file_in),
-                            shell=True, stdout=subprocess.PIPE)
+            o = {'method': 'UglifyJS', 'bin': current_app.config.get('UGLIFY_BIN')}
+            subprocess.call("%s -o %s %s" % (o['bin'], file_out, file_in), shell=True, stdout=subprocess.PIPE)
         elif ftype == 'css' and 'CLEANCSS_BIN' in current_app.config:
-            o = {'method': 'clean-css',
-                 'bin': current_app.config.get('CLEANCSS_BIN')}
-            subprocess.call("%s -o %s %s" % (o['bin'], file_out, file_in),
-                            shell=True, stdout=subprocess.PIPE)
+            o = {'method': 'clean-css', 'bin': current_app.config.get('CLEANCSS_BIN')}
+            subprocess.call("%s -o %s %s" % (o['bin'], file_out, file_in), shell=True, stdout=subprocess.PIPE)
         else:
-            o = {'method': 'YUI Compressor',
-                 'bin': current_app.config.get('JAVA_BIN')}
+            o = {'method': 'YUI Compressor', 'bin': current_app.config.get('JAVA_BIN')}
             variables = (o['bin'], path_to_jar, file_in, file_out)
-            subprocess.call("%s -jar %s %s -o %s" % variables,
-                            shell=True, stdout=subprocess.PIPE)
-
+            subprocess.call("%s -jar %s %s -o %s" % variables, shell=True, stdout=subprocess.PIPE)
         print("Minifying %s (using %s)" % (file_in, o['method']))
 
     # Assemble bundles and process
