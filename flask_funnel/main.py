@@ -39,8 +39,8 @@ class Funnel(object):
         app.config.setdefault('AUTOPREFIXER_ENABLED', False)
         app.config.setdefault('AUTOPREFIXER_BROWSERS', 'last 2 versions')
 
-        app.config.setdefault('PROCESS_CSS_ASSETS', True)
-        app.config.setdefault('PROCESS_JS_ASSETS', True)
+        app.config.setdefault('PROCESS_CSS_ASSETS', False)
+        app.config.setdefault('PROCESS_JS_ASSETS', False)
 
         app.config.setdefault('CSS_BUNDLES', {})
         app.config.setdefault('JS_BUNDLES', {})
